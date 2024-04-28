@@ -1,0 +1,372 @@
+---
+title: "Wine Quality EDA"
+author: "Amgad Khalil"
+date: "2024-04-21"
+output:
+  html_document:
+    toc: true
+---
+
+
+```{r packages_installation, echo=FALSE , warning=FALSE, message=FALSE}
+## required packages installation.. please uncomment any of the following packages if you don't have them already installed
+# install.packages("caret")
+# install.packages("corrplot")
+# install.packages("tidyverse")
+# install.packages("readr")
+# install.packages("dplyr")
+# install.packages("DataExplorer")
+# install.packages("GGally")
+
+```
+# **Data Background**
+This datasets is related to `White` variants of the Portuguese **"Vinho Verde"** wine.The dataset describes the amount of various chemicals present in wine and their effect on it's quality.The classes are ordered and not balanced (e.g. there are much more normal wines than excellent or poor ones). Each wine sample is accompanied by a quality rating assigned by human tasters, reflecting its overall perceived quality.
+
+
+This data frame contains the following columns:
+
+Input variables (based on physicochemical tests):\
+1 - fixed acidity\
+2 - volatile acidity\
+3 - citric acid\
+4 - residual sugar\
+5 - chlorides\
+6 - free sulfur dioxide\
+7 - total sulfur dioxide\
+8 - density\
+9 - pH\
+10 - sulphates\
+11 - alcohol\
+Output variable (based on sensory data):\
+12 - quality (score between 0 and 10)
+
+# **Problem Understanding**
+1. **Regression Problem**: Predict the `numerical quality` score of a wine based on its physicochemical properties. leading to `predicting` future data without depending on experts for the `quality`.
+
+# **Data Understanding(Statistics)**
+
+### **Loading and viewing dataset**:-
+
+
+```{r load_data}
+
+white_wine <- read.csv("Data/wine+quality/winequality-white.csv", header = TRUE, sep = ";")
+head(white_wine)
+```
+### **Shape of the Dataset**:
+
+```{r data_shape}
+
+dim(white_wine)
+
+```
+ 4898 `rows` and 12 `columns` including output column.
+
+
+### **Structure of the dataset**:-\
+
+
+```{r data_structure}
+str(white_wine)
+```
+All `Columns` are **Numeric** (mostly decimals) except the output variable **Quality** is integer.
+
+### **Performing data errors check**:-
+
+
+``` {r errors_check}
+sum(is.na(white_wine)) # checking if there is null values
+sum(duplicated(white_wine)) # checking if there are duplicates
+```
+`0` missing values in the dataset!\
+`937` duplicated rows in the dataset\
+`Duplicated rows` may cause `biases` in analysis but I searched online and the duplicated rows here are likely due to `several wine testers rating the same wine similarly`. Hence, it will be relevant to keep all the observations as it can add more information about consistency.
+
+
+### **Statistical Summary of the data**
+
+
+```{r data_statistics}
+stats_summary <- summary(white_wine)
+print(stats_summary)
+
+```
+1.  fixed.acidity:-
+  - `Range` Varies from 3.8 to 14.2, indicating wide range of acidity levels in the wines.
+  - `Mean` and `Median` are almost equal:- 6.855 and 6.800 (respectively) indicating symmetric distribution (minor right skew)
+  
+2. Volatile Acidity:-
+  - `Range` Varies from 0.0800 to 1.1000, indicating significant variability in volatile acidity.
+  - `Mean` and `Median` are almost equal:- `0.2782` and `0.2782` (respectively) indicating symmetric distribution (minor right skew)
+
+3. Citric Acid:-
+  - `Range`  from 0.0000 to 1.6600, broad range of citric acid.
+  -  The `mean` (`0.3342`) is again slightly higher than the `median` (`0.3200`), indicating a minor right skew.
+
+4. Residual Sugar:-
+  - `Range`  Extreme range from `0.600` to `65.800`
+  -  **right skewed distribution** possibly due to some wines having very high sugar levels.
+  
+5. Chlorides:-
+  - `Range`  Extreme range from `0.600` to `65.800`
+  -  **right skewed distribution** possibly due to some wines having very high sugar levels.
+
+6. Quality:-
+  - `Range`: Scores range from 3 to 9.
+  - `Mean` (5.878), `Median` (6.000) indicating that majority of wines are more normal wines than excellent or poor ones.
+  
+**Conlusion**\
+- Extreme ranges in `Residual Sugar`, `Free Sulfur Dioxide`, `Total Sulfur Dioxide` possibly indication diverse type of wines or processing methods.\
+- most chemical properties are right-skewed distributions \
+- the symmetry in some columns suggest consistent measurements across samples. `(PH)` \
+
+- **Given the broad ranges within the attributes, normalization will be required before applying `predictive modeling techniques`**
+
+
+### **Correlation Analysis**
+
+```{r correlation_analysis, fig.width = 10, fig.height=6, message=FALSE, warning=FALSE}
+correlation <- cor(white_wine)
+correlation <- round(correlation, 2)
+correlation
+
+
+
+#visualizing for better readablity
+library(corrplot)
+corrplot(correlation, type = "lower", order = "hclust", 
+         tl.col = "black", tl.srt = 45,
+         title= "Correlation of Wine Quality Attributes",
+         mar = c(0,0,2,0) # adjusting margins to show the title (bottom, left, top, right)
+         )
+
+
+```
+**Significant Correlations**
+
+1. **Residual Sugar and Density:**
+   - **Correlation**: `0.84`
+   - **Interpretation**: Very `high positive correlation` indicating that as residual sugar increases, density tends to increase as well. This makes sense because sugar usually adds to the density of liquids.
+
+2. **Alcohol and Density:**
+   - **Correlation**: `-0.78`
+   - **Interpretation**: `Strong negative correlation.` As alcohol increases, the density decreases. This also makes sense because alcohol is less dense than water.
+
+3. **Free Sulfur Dioxide and Total Sulfur Dioxide:**
+   - **Correlation**: `0.62`
+
+**Other notable Correlations**
+
+1. **Quality and Alcohol:**
+   - **Correlation**: `0.44`
+   - **Interpretation**: Mild positive correlation suggesting that higher alcohol content might be associated with higher wine quality.
+2. Some features are not correlated at all with the target vairable and could be removed later in feature selections
+
+### **Class Distribution:**
+```{r Class Distribution}
+# count of each rating of the quality column
+quality_counts <- table(white_wine$quality) 
+quality_counts
+
+# percentage of each rating 
+quality_percentage <- quality_counts / nrow(white_wine) * 100
+round(quality_percentage, 2)
+
+```
+
+**Conclusion**
+
+- Classes are highly `imbalanced` with around `85%` in ranges from `5-7` but since we are doing regression it is not very sensitive to such issue.
+
+### **SAMPLING?**
+
+-  `UPSAMPLING` could be used but this made it very extensive computationally because it increased the dataset by a very big number
+
+- `DOWNSAMPLING` isn't recommended here because this will cause loss innformation because there are only 5 data points in the quality range 9 
+
+### **Handling Zero-Variance Predictors**
+```{r zero_variance ,warning=FALSE, message=FALSE}
+
+library(caret) # required library
+nearZeroVar(white_wine, saveMetrics = TRUE)
+
+```
+
+**Conclusion**:\
+
+- There isn't any `non zero variance` feature which mean no features to drop at this point.
+
+# **Data Visualization**
+
+### **Attributes Histogram**
+
+```{r attributes_histograms ,warning=FALSE, message=FALSE}
+
+library(ggplot2) # required library for plotting
+
+for(i in names(white_wine)[-12]) { #
+    p <- ggplot(white_wine, aes_string(x = i)) +
+         geom_histogram(bins = 30, fill = "lightblue", color = "black") +
+         ggtitle(paste("Histogram of", i)) +
+         theme_minimal() +
+         theme(plot.title = element_text(hjust = 0.5))
+    print(p)
+}
+```
+
+**Conclusion:**
+
+- **Ranges vary** from one attribute to another, indicating diverse characteristics in the wine dataset.
+- **Outliers are present** in several attributes.
+- Some attributes show a **symmetrical shape**
+- Most attributes are **right-skewed** indicating higher values are less common.
+
+
+
+### **Density_Plots**
+
+```{r skewness_density_plots}
+for(i in names(white_wine)[-12]) {
+    p <- ggplot(white_wine, aes_string(x = i)) +
+         geom_density(fill = "lightblue", color = "black", alpha = 0.5) +  # Density plot
+         ggtitle(paste("Density and Skewness of", i)) +
+         theme_minimal()
+    print(p)
+}
+```
+
+**Conclusion:**
+
+- `PH` is normally distributed
+- The rest of the attributes are `positively skewed` indicating that most values are on the lower side of the range for this specific attribute with presence of outliers 
+
+
+ 
+ 
+### **Target Distribution**
+
+```{r quality_histogram}
+ggplot(white_wine, aes(x = quality)) + 
+  geom_bar( fill = "lightblue", color = "black") +
+  labs(title = "Distribution of Wine Quality") +
+  geom_text(stat = "count", aes(label = after_stat(count)), vjust = -0.5) + #  showing value counts
+  scale_x_continuous(breaks = seq(3, 9, by = 1)) +
+  theme_minimal()
+```
+
+**Conclusion**:
+
+- Data is highly imabalnced as mentioned before and there is a lot of normal wines (ranging from 5 - 7) more than very bad (3) or very good (9) wines
+
+### **Box Plots of all features**
+```{r box_plots_each_feature}
+
+library(tidyr)
+long_data <- pivot_longer(white_wine, cols = everything(), names_to = "Feature", values_to = "Value")
+
+ggplot(long_data, aes(x = Feature, y = log10(Value +1), fill = Feature)) + # used the log to scale the features for better visualization
+  geom_boxplot() +
+  coord_flip() +  
+  labs(y = "Log(Observation Counts)", x = "Features", title = "Numerical Features Distribution") +
+  theme_minimal()
+
+```
+
+**Conclusion** 
+
+- Once again even after using the log we can see that all the features have different ranges and `scaling` should be used specially with Models like SVM that depends on calculating distances in a way.
+
+
+### **Box plots for features against quality**
+
+```{r box_plots_against_quality}
+library(ggplot2)
+attributes <- names(white_wine[-12])
+for(attribute in attributes) {
+    p <- ggplot(white_wine, aes(x = factor(quality), y=get(attribute), fill=factor(quality))) +
+         geom_boxplot()+
+         labs(title=paste("Box plot of", attribute, "by Quality"), x="Quality", y=attribute) +
+         theme_minimal()
+
+    print(p)
+}
+```
+
+
+
+
+**Conclusion**
+
+- Higher `alcohol` levels are associated with higher `quality` wines.
+- `Density` decreases with an increase in `quality`, indicating the negative correlation between density and alcohol content.
+- Higher `quality` wines have lower amounts of `total sulfur dioxide`.
+- Lots of `outliers` are present in `chlorides` and `free sulfur dioxide`.
+- `No single factor dominance` in the overall quality.
+
+
+### **Scatter plots of key features against quality**
+```{r Scatter_Plots, message = FALSE}
+
+#getting the sorted correaltions with quality 
+key_predictors <- sort(abs(correlation['quality', -ncol(correlation)]), decreasing = TRUE)
+key_predictors
+# scatter plots for the top 3 attributes that are correlated with quality target varibale
+for (predictor in names(key_predictors)[1:3]) {
+  p <- ggplot(white_wine, aes_string(x = predictor, y = "quality", color = 'quality')) + 
+    geom_point(alpha = 0.6,) +
+    geom_smooth(method = "lm", se = FALSE, color = "red") +
+    ggtitle(paste("Quality vs", predictor))+
+    scale_color_gradient(low = "blue", high = "red")  # Adjust colors as needed
+  
+  print(p)
+}
+```
+### **Pair Plots**
+
+```{r pair_plots ,warning=FALSE, message=FALSE}
+library(GGally)
+
+ggpairs(white_wine[1:5], 
+        progress = FALSE,
+        lower = list(continuous = wrap("points",color = white_wine$quality, alpha = 0.6)))
+
+
+```
+### **Violin Plots**
+```{r violin_plots}
+for(attribute in attributes) {
+    p <- ggplot(white_wine, aes(x = factor(quality), y = get(attribute))) +
+            geom_violin(trim = FALSE, fill = 'skyblue', color = 'black') +
+            labs(title=paste("Violin plot of", attribute, "by Quality"), x="Wine Quality", y=attribute) +
+            theme_minimal()
+
+    print(p)
+}
+```
+
+**Conclusion**
+
+- **Presence of outliers in some attributes within specific qualities**
+
+### **PCA**
+
+```{r pca, fig.height=8, fig.width=10}
+
+library(GGally)
+white_wine.pca <- princomp(white_wine[, -which(names(white_wine) == "quality")], cor = TRUE)
+summary(white_wine.pca)
+biplot(white_wine.pca)
+
+```
+**CONCLUSION**
+
+1. **Data Spread**:-\
+
+  - data is `concentrated` in the `center`, indicating many wines have `similar` scores on the first `2` compononets.\
+  
+2. **Arrow Sizes and Directions**
+
+  - The attributes which are  best represented in the plot is `alcohol` and `density` because they have the `biggest arrows`
+  - `alcohol` and `density` have high negative `correlation` because the arrows are `opposite` directions
+  
+- **It is not possible to direclty evaluate the quality with this representation as we don't see any separations at all or clusters**

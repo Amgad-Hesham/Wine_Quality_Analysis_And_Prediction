@@ -1,0 +1,413 @@
+---
+title: "Regression_Modeling_And_Evaluation"
+author: "Amgad Khalil"
+date: "2024-04-27"
+output:
+  html_document:
+    toc: true
+---
+
+```{r packages_installation, echo=FALSE , warning=FALSE, message=FALSE}
+## required packages installation.. please uncomment any of the following packages if you don't have them already installed
+
+# install.packages("caret")
+# install.packages("e1071")
+# install.packages("randomForest")
+# install.packages("tidyverse")
+# install.packages("doParallel")
+# install.packages("dplyr")
+
+```
+
+**Loading_Data**
+
+```{r load_data}
+white_wine <- read.csv("Data/wine+quality/winequality-white.csv", header = TRUE, sep = ";")
+head(white_wine)
+```
+
+# **Feature_Analysis**
+
+- **Correlation**
+
+```{r correlation}
+round(cor(white_wine),2) # rounding values for better readbility
+```
+
+
+**HIGH CORRELATIONS**
+
+- As observed before in the exploration file we see that `density` and `residual sugar` have high correlation of `0.84`, considering dropping one of these features shouldn't lead to `information loss`
+
+- `density` is also `highly correlated` with `alcohol` with a correaltion of `-0.78`making it a `very good candidate` to drop at this point, but if we observe its `correlation` with the` quality target variable` we see that it has a `significant high correlation` falling `second` in order right after `alcohol.` 
+
+**LOW CORRELATIONS WITH QUALITY**
+
+- Some features have very `low correlations` close to have `0`  with the `quality target` like `citric_acid` and `sulphate`, which may indicate that they aren't very important in prediction.
+
+
+
+**Conclusion**
+
+- For the `reasons above` I am going to `keep` the `density variable` for now until further analysis.
+
+- I am also `retaining` the `low_correlations_with_quality` since its role in wine_chemistry could be `non-linear` or not captured by correlation alone.
+
+- **No feature drop at this stage until further feature importance analysis**
+
+
+# **Modeling**
+
+### **Initial Regression Modeling**
+
+We'll start by training a few basic models using the complete set of features to help establish a base performance and have `some guided informed decisions` in `feature_selection` 
+
+```{r initial_modeling, warning=FALSE, message=FALSE}
+# Load necessary libraries
+library(caret)
+library(e1071)
+library(randomForest)
+library(tidyverse)
+library(doParallel)
+
+# process for using parrarel processing
+cl <- makeCluster(detectCores() - 1)
+registerDoParallel(cl)
+
+# splitting data into dependent and independent variables
+X <- white_wine[, -12]  # Exclude the 'quality' column
+y <- white_wine$quality
+
+# splitting data 80% training and 20% testing
+trainIndex <- createDataPartition(y, p = 0.8, list = FALSE)
+X_train <- X[trainIndex, ]
+y_train <- y[trainIndex]
+X_test <- X[-trainIndex, ]
+y_test <- y[-trainIndex]
+
+# Function to train and evaluate a model
+
+train_and_evaluate <- function(model, X_train, y_train, X_test, y_test) {
+  fit <- train(y_train ~ ., data = data.frame(X_train, y_train), method = model)   # train model
+  predictions <- predict(fit, newdata = data.frame(X_test))   # get predictions
+  rmse <- RMSE(predictions, y_test)   #calculate RMSE metric
+  return(rmse)
+}
+
+# list of model names to be trained
+model_types <- list(
+  lm = "lm",         #linear model
+  ridge = "ridge",   #ridge regression
+  lasso = "lasso",   #lasso regression
+  svm = "svmRadial"  # Support Vector Regression with radial basis function (set as regression automatically by caret library)
+  
+)
+
+# Train Evaluate each model
+results <- list()
+for (name in names(model_types)) {
+  model <- model_types[[name]]
+  rmse <- train_and_evaluate(model, X_train, y_train, X_test, y_test)
+  results[[name]] <- rmse
+}
+
+# stop paralell processing
+stopCluster(cl)
+
+# Display results
+for (name in names(results)) {
+  cat(name, "RMSE:", results[[name]], "\n")
+}
+
+```
+
+
+**INITIAL Regression MODELING CONCLUSION**
+
+**Root Mean Squared Error (RMSE) analysis**
+
+- **Linear Regression**:- `0.768`
+- **Ridge Regression**:- `0.769`
+- **Lasso Regression**:- `0.768`
+- **SVM Radial**:- `0.70` #this could change while runnig again because `Cross Validation` is not used here for computational purposes
+
+- `Linear`, `Ridge`, and `Lasso` Regression perform `similarly` with **(RMSE)** around `0.76` indicating that the predicted value on average `deviate`  from the `actual` wine quality by about `0.768` points. 
+
+- `REGULARIZATION` introduced by `Ridge` and `Lasso` suggesting that penalizing large coefficients by `L2 Regularisation` in `Ridge doesn't change the predictions, and the `L1 Regularization` in Lasso that promotes sparsity (some coefficients become zero) also don't change the predictions much. 
+
+- `SVM` performed `best` by having a **RMSE** of `0.72` showing a stronger performance. This could be due to the SVM's ability to handle `non-linear` relationships
+
+# **Data Preprocessing**
+
+### **Removing Duplicates**
+
+```{r removing_duplicates}
+# removing duplicates
+white_wine_cleaned <- distinct(white_wine)
+cat(dim(white_wine)[1] - dim(white_wine_cleaned)[1], "Duplicates Found and removed\n")
+ 
+```
+
+### **Feature_Selection**
+
+- I decided to keep all the `features` because I don't have alot of domain knowledge and I don't have access to talk to experts in the matter. `Statiscal` numbers alone are `not enough` to infer if a feature is important or not.
+
+### **Feature Scaling**
+```{r feature_scaling}
+
+preProcessingValues <- preProcess(white_wine_cleaned[,-12], method = c("center", "scale"))
+white_wine_cleaned_scaled <- predict(preProcessingValues, white_wine_cleaned[, -12])
+white_wine_cleaned_scaled <- as.data.frame(white_wine_cleaned_scaled)
+white_wine_cleaned_scaled$quality <- white_wine_cleaned$quality
+
+```
+
+
+
+
+# **Modeling after Scaling and cleaning**
+
+```{r models_after_scaling, message=FALSE, warning=FALSE}
+# preparing data for training
+X <- white_wine_cleaned_scaled[, -12]  # Exclude the 'quality' column
+y <- white_wine_cleaned_scaled$quality
+
+# splitting data into 80-20 ratio
+trainIndex <- createDataPartition(y, p = 0.8, list = FALSE)
+X_train <- X[trainIndex, ]
+y_train <- y[trainIndex]
+X_test <- X[-trainIndex, ]
+y_test <- y[-trainIndex]
+results <- list()
+
+# parallel processing
+cl <- makeCluster(detectCores() -1)
+registerDoParallel(cl)
+
+# Train Evaluate each model
+
+for (name in names(model_types)) {
+  model <- model_types[[name]]
+  rmse <- train_and_evaluate(model, X_train, y_train, X_test, y_test)
+  results[[name]] <- rmse
+}
+
+# stop parallel processing
+stopCluster(cl)
+
+# Display results
+for (name in names(results)) {
+  cat(name, "RMSE:", results[[name]], "\n")
+}
+```
+
+**Conclusion**
+
+- it is obvious that SVM is the best out of the models that we tried.
+- I am going to try other tree models (a bit more computational) but I will compare them with SVM to choose the best model to tune 
+- `removing the duplicates`  gave us `higher errors while  the lower errors in this stage come from the scaling which wasn't done before this step and for this `reason` I am going to `keep duplicates` as our first analysis proposed 
+
+
+# **SVM VS TREE MODELS**
+- I commented the code because its very `computationally extensive`. If this was an actual production project I think I would've continued with `random forest` but since my pc is a bit slow. I decided to go with `svm` because It was taking `less time`.
+
+- `Random Forest` gave `less errors` initially and also has feature importance which is very good for the problem at hand to understand which chemical attribute contributes the most to the prediction of the quality.
+
+``` {r SVM VS TREE MODELS, warning=FALSE ,message=FALSE}
+
+# library(doParallel)
+# cl <- makeCluster(detectCores() - 1 )
+# registerDoParallel(cl)
+# results <- list()
+# 
+# model_types <- list(
+#   svm = "svmRadial",
+#   rf = "rf",  # Random Forest
+#   gb = "gbm"  # Gradient Boosting
+# )
+# for (name in names(model_types)) {
+#   model <- model_types[[name]]
+#   rmse <- train_and_evaluate(model, X_train, y_train, X_test, y_test)
+#   results[[name]] <- rmse
+# }
+# 
+# stopCluster(cl)
+# 
+# # Display results
+# for (name in names(results)) {
+#   cat(name, "RMSE:", results[[name]], "\n")
+# }
+```
+
+**Conclusion**
+
+- scores are close to eachother in the 3 different models (`SVM`, `RandomForest`, and `GradientBoosting`)
+- since scores are close to eachother and SVM is the least computation out of all 3  I will proceed with `tuning` the `SVM` Model to find the best paramaters.
+
+# **SVM TUNING**
+
+```{r SVM_Tuning}
+registerDoParallel(detectCores() - 1)
+
+# using the uncleaned data since it gave us lower errors initially but with scaling
+preProcessingValues <- preProcess(white_wine[,-12], method = c("center", "scale"))
+white_wine_scaled <- predict(preProcessingValues, white_wine[, -12])
+
+# saving the preprocessing for deployment consistency
+saveRDS(preProcessingValues, file = "preprocessing/preProcessingValues.rds")
+
+# converting back to a dataframe
+white_wine_scaled <- as.data.frame(white_wine_scaled)
+white_wine_scaled$quality <- white_wine$quality
+
+#preparing data for training
+X <- white_wine_scaled[, -12]  # Exclude the 'quality' column
+y <- white_wine_scaled$quality
+
+# splitting data 80% training 20% testing
+trainIndex <- createDataPartition(y, p = 0.8, list = FALSE)
+X_train <- X[trainIndex, ]
+y_train <- y[trainIndex]
+X_test <- X[-trainIndex, ]
+y_test <- y[-trainIndex]
+
+#adjusting train contol to do cross validation
+train_control <- trainControl(
+  method = "cv",       
+  number = 5,         
+  search = "grid"      
+)
+# specifying paramater values to be used in grid search
+svm_grid <- expand.grid(
+  C = c(0.1, 1, 10),         # Cost parameters
+  sigma = c(0.01, 0.1, 1)  
+)
+
+set.seed(42) # for reproducability
+
+# model training
+svm_model <- train(
+  y_train ~ .,
+  data = data.frame(X_train, y_train),
+  method = "svmRadial",
+  trControl = train_control,
+  tuneGrid = svm_grid,
+  
+)
+# Stop parallel processing
+stopImplicitCluster()
+```
+
+```{r Model Evaluation}
+# Checking the best model's results
+print(svm_model)
+plot(svm_model)
+
+
+
+
+# error analysis
+predictions <- predict(svm_model, newdata= data.frame(X_test))
+
+test_rmse <- RMSE(predictions, y_test)
+residuals <- y_test - predictions
+print(paste("Test RMSE:", test_rmse))
+
+plot(predictions, residuals, main = "Residuals vs. Predictions", xlab = "Predicted Quality", ylab = "Residuals")
+abline(h = 0, col = "red")
+```
+
+**Conlcusion**
+
+**BestHyperParamaters**:-
+
+-  `sigma` = `1`
+-  `C` = `10`
+
+**IMPROVED RMSE SCORE**
+-  `RMSE` score `improved` on `test`:- `0.655`
+
+- this `score` is a `pretty low score` indicating that our prediction values are `0.6` points on average `away` from the `actual Values`.
+
+- **Choosing this `model` to be our `deployment` model since it shows the best score during CV and also on `test data`**
+
+# **Model Saving for deployment**
+
+```{r Saving_Model}
+# saving final best model
+saveRDS(svm_model, file = "models/svm_model.rds")
+```
+
+# **Trying Modeling after Removing Outliers**
+
+- **HANDLING OUTLIERS**
+
+```{r Handling_Outliers}
+library(dplyr)
+
+
+white_wine_train <- white_wine_scaled[trainIndex, ]
+
+# a function to calculate IQR and remove outliers
+remove_outliers <- function(df, column) {
+  Q1 <- quantile(df[[column]], 0.25)
+  Q3 <- quantile(df[[column]], 0.75)
+  IQR <- Q3 - Q1
+  lower_bound <- Q1 - 1.5 * IQR
+  upper_bound <- Q3 + 1.5 * IQR
+  df <- df %>% filter(df[[column]] >= lower_bound & df[[column]] <= upper_bound)
+  return(df)
+}
+
+# Applying the outlier removal function to the specified columns
+for (col in names(white_wine_train[-12])) {
+  white_wine_train <- remove_outliers(white_wine_train, col)
+}
+
+# Extracting X_train and y_train from the cleaned training data
+X_train_clean <- white_wine_train %>% select(-quality)
+y_train_clean <- white_wine_train$quality
+
+```
+
+- **EVALUATING AFTER REMOVING OUTLIERS**
+
+```{r evaluating model on cleaned data}
+
+train_control <- trainControl(method = "cv", number = 5)
+registerDoParallel(detectCores() - 1)
+set.seed(42)
+svm_model <- train(
+  y_train_clean ~ .,
+  data = data.frame(X_train_clean,y_train_clean),
+  method = "svmRadial",
+  trControl = train_control,
+  tuneGrid = expand.grid(C = 10, sigma = 1) 
+)
+stopImplicitCluster()
+
+
+
+# error analysis
+predictions <- predict(svm_model, newdata= data.frame(X_test))
+residuals <- y_test - predictions
+test_rmse <- RMSE(predictions, y_test)
+print(paste("Test RMSE:", test_rmse))
+
+plot(predictions, residuals, main = "Residuals vs. Predictions", xlab = "Predicted Quality", ylab = "Residuals")
+abline(h = 0, col = "red")
+
+
+```
+
+**CONCLUSION** \
+
+- **removing `outliers` increased `errror` significatly indicating that those outliers might actually be important data ( not errors )**
+
+- **we will use the model that trains on the `Scaled` data but with `outliers`.**
+
+
+
+**CONCLUSION**
+
+- `SVM` model shows` worse results after `removing outlier`s so we will use the model that trains on the data without outliers
