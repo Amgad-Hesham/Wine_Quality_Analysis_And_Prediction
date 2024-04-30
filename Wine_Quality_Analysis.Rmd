@@ -134,10 +134,12 @@ correlation
 
 #visualizing for better readablity
 library(corrplot)
-corrplot(correlation, type = "lower", order = "hclust", 
+corrplot(correlation,
+         type = "lower", order = "hclust", 
          tl.col = "black", tl.srt = 45,
          title= "Correlation of Wine Quality Attributes",
-         mar = c(0,0,2,0) # adjusting margins to show the title (bottom, left, top, right)
+         mar = c(0,0,2,0), # adjusting margins to show the title (bottom, left, top, right)
+         diag = FALSE
          )
 
 
